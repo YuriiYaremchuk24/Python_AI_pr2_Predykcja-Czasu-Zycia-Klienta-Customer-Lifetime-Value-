@@ -1,0 +1,113 @@
+# Importowanie bibliotek
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
+import joblib
+
+# Wczytanie danych z pliku Excel
+file_path = r"C:\Users\Yurii\Online Retail.xlsx"
+df = pd.read_excel(file_path)
+
+# Podgląd danych
+print("Podgląd danych:")
+print(df.head())
+print(df.info())
+
+# Usunięcie brakujących wartości
+df = df.dropna()
+
+# Usunięcie niepotrzebnych kolumn
+df = df.drop(['InvoiceNo', 'Description'], axis=1)
+
+# Tworzenie nowej kolumny 'TotalPrice' jako suma ilości * cena
+df['TotalPrice'] = df['Quantity'] * df['UnitPrice']
+
+# Grupowanie danych po Kliencie
+customer_data = df.groupby('CustomerID').agg({
+    'TotalPrice': 'sum',                      # Suma wydatków klienta
+    'InvoiceDate': lambda x: (x.max() - x.min()).days,  # Czas zakupów (w dniach)
+    'Quantity': 'sum'                         # Suma ilości zakupionych produktów
+}).rename(columns={'InvoiceDate': 'CustomerTime'})
+
+# Resetowanie indeksu
+customer_data = customer_data.reset_index()
+
+# Podgląd przetworzonych danych
+print("\nPrzetworzone dane:")
+print(customer_data.head())
+
+# Przekształcenie danych: zmienne objaśniające (X) i zmienna docelowa (y)
+X = customer_data.drop(columns=['TotalPrice', 'CustomerID'])  # Zmienne objaśniające
+y = customer_data['TotalPrice']  # Zmienna docelowa: CLV
+
+# Podział danych na zbiór treningowy i testowy (80% trening, 20% test)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+print(f"\nRozmiar zbioru treningowego: {X_train.shape}")
+print(f"Rozmiar zbioru testowego: {X_test.shape}")
+
+# Standaryzacja danych 
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Trenowanie modelu Random Forest
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Predykcja na zbiorze testowym
+y_pred_rf = rf_model.predict(X_test)
+
+# Ewaluacja modelu Random Forest
+mse_rf = mean_squared_error(y_test, y_pred_rf)
+r2_rf = r2_score(y_test, y_pred_rf)
+print("\nWyniki modelu Random Forest:")
+print(f"Mean Squared Error (MSE): {mse_rf:.2f}")
+print(f"R2 Score: {r2_rf:.2f}")
+
+# Trenowanie modelu XGBoost
+xgb_model = XGBRegressor(n_estimators=100, random_state=42)
+xgb_model.fit(X_train, y_train)
+
+# Predykcja na zbiorze testowym
+y_pred_xgb = xgb_model.predict(X_test)
+
+# Ewaluacja modelu XGBoost
+mse_xgb = mean_squared_error(y_test, y_pred_xgb)
+r2_xgb = r2_score(y_test, y_pred_xgb)
+print("\nWyniki modelu XGBoost:")
+print(f"Mean Squared Error (MSE): {mse_xgb:.2f}")
+print(f"R2 Score: {r2_xgb:.2f}")
+
+# Porównanie wyników modeli
+models = ['Random Forest', 'XGBoost']
+mse_values = [mse_rf, mse_xgb]
+r2_values = [r2_rf, r2_xgb]
+
+plt.figure(figsize=(10, 5))
+plt.bar(models, mse_values, label='MSE')
+plt.title('Porównanie MSE modeli')
+plt.ylabel('MSE')
+plt.show()
+
+plt.figure(figsize=(10, 5))
+plt.bar(models, r2_values, label='R2', color='orange')
+plt.title('Porównanie R2 modeli')
+plt.ylabel('R2')
+plt.show()
+
+# Zapisanie najlepszego modelu do pliku
+joblib.dump(xgb_model, r"C:\Users\Yurii\Downloads\xgb_clv_model.pkl")
+print("\nModel XGBoost został zapisany jako 'xgb_clv_model.pkl'.")
+
+# Predykcja dla nowych danych
+new_data = pd.DataFrame({'CustomerTime': [200], 'Quantity': [500]})
+new_data_scaled = scaler.transform(new_data)
+prediction = xgb_model.predict(new_data_scaled)
+print(f"\nPrzewidywana wartość klienta (CLV): {prediction[0]:.2f}")
